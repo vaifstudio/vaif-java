@@ -1,0 +1,182 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'signing'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+    withSourcesJar()
+    withJavadocJar()
+}
+
+configurations {
+    googleJavaFormat {
+        canBeConsumed = false
+        canBeResolved = true
+    }
+}
+
+dependencies {
+    testImplementation platform('org.junit:junit-bom:5.14.4')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    googleJavaFormat 'com.google.googlejavaformat:google-java-format:1.28.0'
+    constraints {
+        googleJavaFormat('com.google.guava:guava:33.7.2-jre') {
+            because 'GHSA-xxph-c9ww-hj94 affects Guava before 33.7.2'
+        }
+    }
+}
+
+// Lock every resolvable configuration, including test and tool dependencies.
+dependencyLocking {
+    lockAllConfigurations()
+    lockMode = LockMode.STRICT
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+    options.encoding = 'UTF-8'
+    options.compilerArgs.addAll(['-Xlint:all', '-Werror'])
+}
+
+tasks.named('processResources') {
+    from('LICENSE') { into 'META-INF' }
+}
+
+tasks.named('jar') {
+    manifest {
+        attributes(
+            'Automatic-Module-Name': 'studio.vaif.sdk',
+            'Implementation-Title': 'VAIF Studio Java SDK',
+            'Implementation-Version': project.version,
+            'Implementation-Vendor': 'VAIF Studio LLC'
+        )
+    }
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+    systemProperty 'vaif.package', rootDir.absolutePath
+}
+
+tasks.withType(Javadoc).configureEach {
+    options.encoding = 'UTF-8'
+    options.addBooleanOption('Xdoclint:all', true)
+    // JDK 11 javadoc has no -Werror; it still fails on doclint errors.
+    if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
+        options.addBooleanOption('Werror', true)
+    }
+    failOnError = true
+}
+
+// google-java-format checks the hand-written sources. Generated files are excluded.
+def formattedSources = fileTree('src') {
+    include '**/*.java'
+    exclude '**/studio/vaif/sdk/generated/Operations.java'
+    exclude '**/studio/vaif/sdk/StaffOnlyRoutes.java'
+}
+def formatterJvmArgs = ['api', 'code', 'file', 'parser', 'tree', 'util'].collect {
+    "--add-exports=jdk.compiler/com.sun.tools.javac.${it}=ALL-UNNAMED".toString()
+}
+def formatterTask = { String name, String summary, List<String> mode ->
+    tasks.register(name, JavaExec) {
+        group = 'formatting'
+        description = summary
+        classpath = configurations.googleJavaFormat
+        mainClass = 'com.google.googlejavaformat.java.Main'
+        jvmArgs formatterJvmArgs
+        inputs.files(formattedSources)
+        doFirst {
+            args(mode + formattedSources.files.collect { it.path }.sort())
+        }
+    }
+}
+formatterTask('checkJavaFormat', 'Fails when a hand-written source differs from google-java-format.',
+    ['--dry-run', '--set-exit-if-changed'])
+formatterTask('formatJava', 'Formats the hand-written sources with google-java-format.', ['--replace'])
+// google-java-format 1.28.0 is the last release that runs on JDK 17.
+if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) {
+    tasks.named('check') { dependsOn 'checkJavaFormat' }
+}
+
+tasks.withType(GenerateModuleMetadata).configureEach {
+    // The Central bundle carries the POM only.
+    enabled = false
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'vaif-java'
+            pom {
+                name = 'VAIF Studio Java SDK'
+                description = 'Blocking Java client for the VAIF Studio API.'
+                url = 'https://github.com/vaifstudio/vaif-java'
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+                organization {
+                    name = 'VAIF Studio LLC'
+                    url = 'https://vaif.studio'
+                }
+                developers {
+                    developer {
+                        id = 'michaelgriffin'
+                        name = 'Michael Griffin'
+                        organization = 'VAIF Studio LLC'
+                        organizationUrl = 'https://vaif.studio'
+                    }
+                }
+                issueManagement {
+                    system = 'GitHub'
+                    url = 'https://github.com/vaifstudio/vaif-java/issues'
+                }
+                scm {
+                    url = 'https://github.com/vaifstudio/vaif-java'
+                    connection = 'scm:git:https://github.com/vaifstudio/vaif-java.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/vaifstudio/vaif-java.git'
+                }
+            }
+        }
+    }
+    // Local staging only. There is no remote publishing repository.
+    repositories {
+        maven {
+            name = 'bundle'
+            url = layout.buildDirectory.dir('central')
+        }
+    }
+}
+
+signing {
+    if (providers.gradleProperty('signingKey').isPresent()) {
+        useInMemoryPgpKeys(
+            providers.gradleProperty('signingKey').get(),
+            providers.gradleProperty('signingPassword').getOrElse(''))
+        sign publishing.publications.mavenJava
+    }
+}
+
+tasks.register('centralBundle', Zip) {
+    group = 'publishing'
+    description = 'Packages the signed artifacts and POM as a Maven Central upload bundle.'
+    dependsOn 'publishMavenJavaPublicationToBundleRepository'
+    from(layout.buildDirectory.dir('central')) {
+        include "${project.group.toString().replace('.', '/')}/vaif-java/${project.version}/**"
+        exclude '**/maven-metadata*'
+    }
+    archiveFileName = "vaif-java-${project.version}-central.zip"
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    doFirst {
+        if (!providers.gradleProperty('signingKey').isPresent()) {
+            throw new GradleException('centralBundle requires the signingKey and signingPassword Gradle properties.')
+        }
+    }
+}

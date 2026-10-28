@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible SDK defect.
+body:
+  - type: markdown
+    attributes:
+      value: Remove credentials and customer data. Report vulnerabilities to security@vaif.studio.
+  - type: input
+    id: versions
+    attributes:
+      label: SDK version, Java version, and operating system
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Include the code and steps needed to reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual results
+      description: Include error codes and request IDs when available.
+    validations:
+      required: true
