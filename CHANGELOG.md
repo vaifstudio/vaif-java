@@ -12,6 +12,9 @@ not available yet.
 - Thread-safe `VaifClient` configured through a builder: base URL, project ID,
   API key, bearer token or token supplier, timeout, session store, transport,
   and WebSocket factory.
+- The base URL must use HTTPS. HTTP is accepted only for `localhost`,
+  `127.0.0.1` and `::1`; any other HTTP base URL throws `VALIDATION_ERROR`, so
+  the API key and bearer token never travel in cleartext.
 - Redirects are refused, so API keys and bearer tokens never reach another
   origin.
 

@@ -55,7 +55,7 @@ public final class VaifClient {
   private final Realtime realtime;
 
   private VaifClient(Builder builder) {
-    baseUrl = validUrl(builder.baseUrl).toString().replaceAll("/+$", "");
+    baseUrl = httpsBaseUrl(validUrl(builder.baseUrl)).toString().replaceAll("/+$", "");
     projectId = builder.projectId;
     apiKey = builder.apiKey;
     storageUrl = builder.storageUrl;
@@ -269,6 +269,15 @@ public final class VaifClient {
   static boolean loopback(String host) {
     return host != null
         && Set.of("localhost", "127.0.0.1", "::1", "[::1]").contains(host.toLowerCase(Locale.ROOT));
+  }
+
+  /** Refuses a base URL that would send the API key and bearer token over plain HTTP. */
+  static URI httpsBaseUrl(URI uri) {
+    if (!uri.getScheme().equalsIgnoreCase("https") && !loopback(uri.getHost())) {
+      throw VaifException.validation(
+          "Base URL must use HTTPS (HTTP is accepted only for localhost, 127.0.0.1 and ::1)");
+    }
+    return uri;
   }
 
   static URI secureUrl(String value) {
@@ -653,16 +662,19 @@ public final class VaifClient {
     /**
      * Sets the API base URL.
      *
-     * @param value HTTP(S) origin with an optional path, without credentials, query, or fragment
+     * @param value HTTPS origin with an optional path, without credentials, query, or fragment;
+     *     HTTP is accepted only for localhost, 127.0.0.1 and ::1
      * @return this builder
-     * @throws VaifException if the URL is invalid
+     * @throws VaifException if the URL is invalid or uses HTTP for any other host
      * @throws NullPointerException if value is null
      */
     public Builder baseUrl(String value) {
       Objects.requireNonNull(value, "baseUrl");
-      if (validUrl(value).getQuery() != null) {
+      URI uri = validUrl(value);
+      if (uri.getQuery() != null) {
         throw VaifException.validation("Base URL cannot contain a query");
       }
+      httpsBaseUrl(uri);
       baseUrl = value;
       return this;
     }

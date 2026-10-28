@@ -79,6 +79,8 @@ The examples below assume `import studio.vaif.sdk.*;` and `import java.util.*;`.
 `VaifClient.builder()` accepts `baseUrl`, `projectId`, `apiKey`, `accessToken`,
 `storageUrl`, `timeout`, `sessionStore`, `transport`, and `socketFactory`. The
 base URL defaults to `https://api.vaif.studio`, and the timeout to 30 seconds.
+The base URL must use HTTPS; HTTP is accepted only for `localhost`, `127.0.0.1`
+and `::1`, and any other HTTP base URL throws `VALIDATION_ERROR`.
 
 ```java
 static VaifClient configured(String projectId, java.util.function.Supplier<String> tokens) {

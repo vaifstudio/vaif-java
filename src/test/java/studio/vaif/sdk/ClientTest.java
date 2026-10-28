@@ -125,6 +125,27 @@ class ClientTest {
   }
 
   @Test
+  void baseUrlRequiresHttpsExceptForLoopbackHosts() {
+    for (String allowed :
+        List.of(
+            "https://api.example.com",
+            "HTTPS://api.example.com",
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://[::1]:3000")) {
+      assertEquals(allowed, VaifClient.builder().baseUrl(allowed).build().baseUrl());
+    }
+    for (String refused :
+        List.of(
+            "http://api.example.com", "HTTP://api.example.com", "http://localhost.example.com")) {
+      VaifException error = fails("VALIDATION_ERROR", () -> VaifClient.builder().baseUrl(refused));
+      assertEquals(
+          "Base URL must use HTTPS (HTTP is accepted only for localhost, 127.0.0.1 and ::1)",
+          error.getMessage());
+    }
+  }
+
+  @Test
   void eventStreamFailuresUseStreamError() throws IOException {
     Transport broken =
         request ->
